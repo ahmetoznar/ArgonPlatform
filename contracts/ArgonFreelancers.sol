@@ -238,14 +238,20 @@ contract MainContract {
     address[] public allPersons;
     uint256 private result;
     IERC20 public ArgonToken =
-        IERC20(0x851F7a700c5d67DB59612b871338a85526752c25); // ArgonToken Contract Address
+        IERC20(0x851f7a700c5d67db59612b871338a85526752c25); // ArgonToken Contract Address
     address ArgonTokenDeployer = 0x8CB5b6B0A475e760ed0610AD9cF8403Ec050bc8A;
     uint256 public RemainingArgonToken = 5000000000000000000000000;
     // ---- END ---- Variable Definations
+    uint public approverMinArgonLimit = 100000 * 10 ** 18;
 
     modifier isInAccounts() {
         require(personsAddress[msg.sender]);
         _;
+    }
+    
+    function changeApproverMinArgonLimit(uint _value) public {
+        require(msg.sender == ArgonTokenDeployer);
+        approverMinArgonLimit = _value;
     }
 
     // Sending ArgonToken To Deployer Address
@@ -273,6 +279,9 @@ contract MainContract {
         string _personLocation,
         string _personLang
     ) public {
+        if(_accountType == 1) {
+            require(ArgonToken.balanceOf(msg.sender) >= approverMinArgonLimit);
+        }
         AccountData memory newAccount =
             AccountData({
                 accountType: _accountType,
@@ -584,6 +593,8 @@ contract WorkContract {
         string description;
         string title;
         uint256 deadline;
+        address offerTokenContract;
+        bool tokenContractIsBNB;
     }
 
     string public workTitle;
@@ -611,6 +622,11 @@ contract WorkContract {
     string public approverReport;
     bool public approverStatus;
     uint256 public workPrice;
+    bool public isBNB;
+    address public tokenContractAddress;
+    IERC20 public ArgonToken =
+        IERC20(0x851f7a700c5d67db59612b871338a85526752c25); // ***ArgonToken Contract***
+
 
     constructor(
         string _workTitle,
@@ -685,7 +701,9 @@ contract WorkContract {
         bool _isArgonShield,
         string _description,
         uint256 _deadline,
-        string _title
+        string _title,
+        address _tokenContract,
+        bool _isBNB
     ) public {
         Offer memory newOffer =
             Offer({
@@ -694,7 +712,9 @@ contract WorkContract {
                 isArgonShield: _isArgonShield,
                 description: _description,
                 deadline: _deadline,
-                title: _title
+                title: _title,
+                offerTokenContract: _tokenContract,
+                tokenContractIsBNB: _isBNB
             });
         offers[msg.sender].push(newOffer);
         allFreelancerAddress.push(msg.sender);
@@ -729,7 +749,9 @@ contract WorkContract {
             bool,
             string,
             string,
-            uint256
+            uint256,
+            address,
+            bool
         )
     {
         Offer storage data = offers[_freelancerAddress][_index];
@@ -739,7 +761,9 @@ contract WorkContract {
             data.isArgonShield,
             data.description,
             data.title,
-            data.deadline
+            data.deadline,
+            data.offerTokenContract,
+            data.tokenContractIsBNB
         );
     }
 
@@ -748,6 +772,7 @@ contract WorkContract {
         uint256 _index,
         address _approveraddress
     ) public payable {
+        require(ArgonToken.balanceOf(_approveraddress) >= deployedFromContract.approverMinArgonLimit());
         require(msg.sender == employerAddress);
         Offer storage data = offers[_freelancerAddress][_index];
         require(msg.value >= data.offerPrice);
@@ -759,6 +784,29 @@ contract WorkContract {
         workPrice = data.offerPrice;
         approverAddress = _approveraddress;
         approverStatus = true;
+        isBNB = true;
+    }
+    
+    function selectOfferWithToken(
+        address _freelancerAddress,
+        uint256 _index,
+        address _approveraddress
+    ) public {
+        require(ArgonToken.balanceOf(_approveraddress) >= deployedFromContract.approverMinArgonLimit());
+        require(msg.sender == employerAddress);
+        Offer storage data = offers[_freelancerAddress][_index];
+        require(IERC20(data.offerTokenContract).allowance(msg.sender, address(this)) >= data.offerPrice);
+        freelancerAddress = data.freelancerAddress;
+        workStatus = true;
+        workStartDate = now;
+        deadLine = data.deadline;
+        isWorkFreelancer = true;
+        workPrice = data.offerPrice;
+        approverAddress = _approveraddress;
+        approverStatus = true;
+        isBNB = false;
+        tokenContractAddress = data.offerTokenContract;
+        IERC20(data.offerTokenContract).transferFrom(msg.sender, address(this), data.offerPrice);
     }
 
     function freelancerSendFile(string _workFilesLink) public {
@@ -770,7 +818,11 @@ contract WorkContract {
 
     function employerReceiveFile(uint256 _puan) public {
         require(msg.sender == employerAddress);
+        if (isBNB) {
         freelancerAddress.transfer(workPrice);
+        } else {
+            IERC20(tokenContractAddress).transfer(freelancerAddress, workPrice);
+        }
         deployedFromContract.setPuan(_puan, freelancerAddress);
         workEndDate = now;
     }
@@ -783,10 +835,15 @@ contract WorkContract {
     }
 
     function confirmApprover(string _description) public {
+        require(ArgonToken.balanceOf(msg.sender) >= deployedFromContract.approverMinArgonLimit());
         require(msg.sender == approverAddress);
         require(approverConfirmStatus == 0);
         approverConfirmStatus = 1;
+        if(isBNB) {
         freelancerAddress.transfer(workPrice);
+        } else {
+            IERC20(tokenContractAddress).transfer(freelancerAddress, workPrice);
+        }
         deployedFromContract.deleteApproverWorkAddress(this, approverAddress);
         approverReport = _description;
         workEndDate = now;
@@ -794,10 +851,15 @@ contract WorkContract {
     }
 
     function cancelApprover(string _description) public {
+        require(ArgonToken.balanceOf(msg.sender) >= deployedFromContract.approverMinArgonLimit());
         require(msg.sender == approverAddress);
         require(approverConfirmStatus == 0);
         approverConfirmStatus = 2;
+        if (isBNB) {
         employerAddress.transfer(workPrice);
+        } else {
+            IERC20(tokenContractAddress).transfer(employerAddress, workPrice);
+        }
         deployedFromContract.deleteApproverWorkAddress(this, approverAddress);
         approverReport = _description;
         deployedFromContract.sendApproverArgonCoin(approverAddress);
@@ -805,6 +867,10 @@ contract WorkContract {
 
     function sendDeadline() public {
         require(now > deadLine);
+        if(isBNB) {
         employerAddress.transfer(workPrice);
+        } else {
+            IERC20(tokenContractAddress).transfer(employerAddress, workPrice);
+        }
     }
 }
