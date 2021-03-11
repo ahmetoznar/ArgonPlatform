@@ -796,6 +796,7 @@ contract WorkContract {
         require(msg.sender == employerAddress);
         Offer storage data = offers[_freelancerAddress][_index];
         require(IERC20(data.offerTokenContract).allowance(msg.sender, address(this)) >= data.offerPrice);
+        require(IERC20(data.offerTokenContract).balanceOf(msg.sender) >= data.offerPrice);
         freelancerAddress = data.freelancerAddress;
         workStatus = true;
         workStartDate = now;
