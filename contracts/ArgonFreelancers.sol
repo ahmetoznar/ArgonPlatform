@@ -39,8 +39,17 @@ contract ApproverRole {
 
     Roles.Role private _approvers;
 
+    /* The addresses that can get sign access */
+    address firstSignAddress;
+    address secondSignAddress;
+    
+    mapping(address => bool) signed; // Signed flag
+
     constructor () internal {
         _addApprover(msg.sender);
+        
+        firstSignAddress = 0xxxxxxxxxxxxxxxxx;   
+        secondSignAddress = 0xyyyyyyyyyyyyyyy;
     }
 
     modifier onlyApprover() {
@@ -48,20 +57,39 @@ contract ApproverRole {
         _;
     }
 
+    /* first sign address and second sign address should call this function for sign */
+    function Sign() public {
+        require (msg.sender == firstSignAddress || msg.sender == secondSignAddress);
+        require (signed[msg.sender] == false);
+        signed[msg.sender] = true;
+    }
+
     function isApprover(address account) public view returns (bool) {
         return _approvers.has(account);
     }
 
     function addApprover(address account) public onlyApprover {
+        require (signed[firstSignAddress] == true && signed[secondSignAddress] == true); // We can add Approver only when signed
         _addApprover(account);
+        
+        signed[firstSignAddress] = false;
+        signed[secondSignAddress] = false;
     }
 
     function removeApprover(address account) public onlyApprover {
+        require (signed[firstSignAddress] == true && signed[secondSignAddress] == true); // We can remove Approver only when signed
         _removeApprover(account);
+        
+        signed[firstSignAddress] = false;
+        signed[secondSignAddress] = false;
     }
 
     function renounceApprover() public {
+        require (signed[firstSignAddress] == true && signed[secondSignAddress] == true); // We can renounce Approver only when signed
         _removeApprover(msg.sender);
+        
+        signed[firstSignAddress] = false;
+        signed[secondSignAddress] = false;
     }
 
     function _addApprover(address account) internal {
